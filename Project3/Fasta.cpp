@@ -1,4 +1,11 @@
-#include "fasta.h"
+#include <vector>
+#include <string>
+#include <fstream>
+#include <stdexcept>
+
+#include "Fasta.h"
+
+using namespace std;
 
 vector<pair<string,string>> read_fasta_from_stream(ifstream& stream)
 {

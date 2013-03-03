@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <cassert>
 
 using namespace std;
 
@@ -12,12 +13,12 @@ public:
     { }
     
     inline T operator()(size_t row, size_t column) const {
-        // assert(row < n && column < m);
+        assert(row < n && column < m);
         return elements[m * row + column];
     }
     
     inline T& operator()(size_t row, size_t column) {
-        // assert(row < n && column < m);
+        assert(row < n && column < m);
         return elements[m * row + column];
     }
     
