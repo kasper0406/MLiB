@@ -1,16 +1,20 @@
 #include <iostream>
+#include <iomanip>
 #include <vector>
 #include <string>
 #include <sstream>
 #include <random>
 #include <functional>
+#include <memory>
 
 #include "HMM.h"
 #include "Fasta.h"
 #include "Viterbi.h"
 #include "CountingTrainer.h"
 #include "ViterbiTrainer.h"
+#include "EMTrainer.h"
 #include "SimpleParser.h"
+#include "ForwardBackward.h"
 
 using namespace std;
 
@@ -168,7 +172,7 @@ HMM test_model() {
     hmm.setEmissionProb("7", {"A","C","G","T"}, {0.15,0.30,0.20,0.35});
     
     hmm.setStartProb("4", 1);
-    */
+     */
     
     vector<State> states;
     states.push_back(State("NC", 1));
@@ -222,8 +226,8 @@ int main(int argc, const char * argv[])
 {
     cout << "Loading files..." << endl;
     auto observations = read_seqs_from_files({"genome1.fa","genome2.fa","genome3.fa","genome4.fa","genome5.fa"});
-    auto annotations = read_seqs_from_files({"annotation1.fa","annotation2.fa","annotation3.fa","annotation4.fa","annotation5.fa"});
     
+    auto annotations = read_seqs_from_files({"annotation1.fa","annotation2.fa","annotation3.fa","annotation4.fa","annotation5.fa"});
     cout << "Parsing observations..." << endl;
     vector<vector<string>> parsed;
     for (int i = 0; i < observations.size(); i++)
@@ -231,50 +235,87 @@ int main(int argc, const char * argv[])
     
     cout << "Building and traning model..." << endl;
     
-    //HMM model = build_model();
-    // train_by_counting(model, observations, parsed);
+    HMM model = build_model();
+    train_by_counting(model, observations, parsed);
     
-    HMM model = build_model_with_transitions();
-    train_by_viterbi(model, observations, 10);
+    cout << "Stop!" << endl;
+    
+    // HMM model = build_model_with_transitions();
+    //train_by_viterbi(model, observations, 1);
+
+    /*
+    ifstream input("predictions/model_bw_40.dot", ifstream::in);
+    HMM model = HMM::loadFromDot(input);
+    model.setStartProb(0, 1);
+    input.close();
+     */
     
     model.finalize();
     
-    cout << "Writing model to dot file..." << endl;
-    ofstream out("model.dot", ofstream::out);
-    model.toDot(out);
-    out.close();
+    auto toBePredicted = read_seqs_from_files({"genome6.fa","genome7.fa","genome8.fa","genome9.fa","genome10.fa","genome11.fa"});
     
-    cout << "Running Viterbi..." << endl;
+    const int iterations = 20;
     
-    auto toBePredicted = read_seqs_from_files({"genome6.fa"});
+    /*
+    for (int i = 1; i <= iterations; i++) {
+        cout << "Viterbi " << i << endl;
+        train_by_viterbi(model, observations, 1);
+    }
+     */
     
-    double probability;
-    vector<size_t> trace;
-    tie(probability, trace) = viterbi(toBePredicted[0], model);
+    for (int i = 1; i <= iterations; i++) {
+        model.unlock();
+        
+        cout << "Running iteration " << i << " of viterbi training." << endl;
+        train_by_baumwelch(model, observations);
+        // train_by_viterbi(model, observations, 1);
     
-    cout << "Writing trace..." << endl;
-    ofstream outpred("predictions/6.fa", ofstream::out);
-    for (auto s : trace) {
-        switch (model.stateLabel(s)[0]) {
-            case 'N': outpred << 'N'; break;
-            case 'R': outpred << string(3, 'R'); break;
-            default: outpred << string(3, 'C'); break;
+        model.finalize();
+    
+        cout << "Writing model to dot file..." << endl;
+        stringstream modelname;
+        modelname << "predictions/model_bwvit_" << i << ".dot";
+        ofstream out(modelname.str(), ofstream::out);
+        model.toDot(out);
+        out.close();
+    
+        cout << "Running Viterbi..." << endl;
+        for (int j = 0; j < toBePredicted.size(); j++) {
+            double probability;
+            vector<size_t> trace;
+            
+            tie(probability, trace) = viterbi(toBePredicted[j], model);
+            
+            cout << "Writing trace..." << endl;
+            
+            stringstream file;
+            file << "predictions/bwvit" << i << "_" << (j+6) << ".fa";
+            
+            ofstream outpred(file.str(), ofstream::out);
+            for (auto s : trace) {
+                switch (model.stateLabel(s)[0]) {
+                    case 'N': outpred << 'N'; break;
+                    case 'R': outpred << string(3, 'R'); break;
+                    default: outpred << string(3, 'C'); break;
+                }
+            }
+            outpred.close();
         }
     }
-    outpred.close();
+    
     
     /*
     HMM model = test_model();
     model.finalize();
     
     cout << "Writing model to dot file..." << endl;
-    ofstream out("model.dot", ofstream::out);
+    ofstream out("testmodel.dot", ofstream::out);
     model.toDot(out);
     out.close();
     
     double probability;
     vector<size_t> trace;
-    tie(probability, trace) = viterbi("TGAGTATCACTTAGGTCTATGTCTAGTCGTCTTTCGTAATGTTTGGTCTTGTCACCAGTTATCCTATGGCGCTCCGAGTCTGGTTCTCGAAATAAGCATCCCCGCCCAAGTCATGCACCCGTTTGTGTTCTTCGCCGACTTGAGCGACTTAATGAGGATGCCACTCGTCACCATCTTGAACATGCCACCAACGAGGTTGCCGCCGTCCATTATAACTACAACCTAGACAATTTTCGCTTTAGGTCCATTCACTAGGCCGAAATCCGCTGGAGTAAGCACAAAGCTCGTATAGGCAAAACCGACTCCATGAGTCTGCCTCCCGACCATTCCCATCAAAATACGCTATCAATACTAAAAAAATGACGGTTCAGCCTCACCCGGATGCTCGAGACAGCACACGGACATGATAGCGAACGTGACCAGTGTAGTGGCCCAGGGGAACCGCCGCGCCATTTTGTTCATGGCCCCGCTGCCGAATATTTCGATCCCAGCTAGAGTAATGACCTGTAGCTTAAACCCACTTTTGGCCCAAACTAGAGCAACAATCGGAATGGCTGAAGTGAATGCCGGCATGCCCTCAGCTCTAAGCGCCTCGATCGCAGTAATGACCGTCTTAACATTAGCTCTCAACGCTATGCAGTGGCTTTGGTGTCGCTTACTACCAGTTCCGAACGTCTCGGGGGTCTTGATGCAGCGCACCACGATGCCAAGCCACGCTGAATCGGGCAGCCAGCAGGATCGTTACAGTCGAGCCCACGGCAATGCGAGCCGTCACGTTGCCGAATATGCACTGCGGGACTACGGACGCAGGGCCGCCAACCATCTGGTTGACGATAGCCAAACACGGTCCAGAGGTGCCCCATCTCGGTTATTTGGATCGTAATTTTTGTGAAGAACACTGCAAACGCAAGTGGCTTTCCAGACTTTACGACTATGTGCCATCATTTAAGGCTACGACCCGGCTTTTAAGACCCCCACCACTAAATAGAGGTACATCTGA", model);
+    tie(probability, trace) = viterbi("GTTTCCCAGTGTATATCGAGGGATACTACGTGCATAGTAACATCGGCCAA", model);
     
     cout << "Prob: " << probability << endl;
     for (auto s : trace) {
@@ -283,7 +324,44 @@ int main(int argc, const char * argv[])
         else if (s == 2) cout << "567";
     }
     cout << endl;
-    */
-     
+     */
+    
+    /*
+    string observation = "GTTTCCCAGTGTATATCGAGGGATACTACGTGCATAGTAACATCGGCCAA";
+    auto res = forward_backward(observation, model);
+    double C = 1;
+    for (size_t i = 0; i < observation.length(); i++) {
+        C *= get<0>(res)[i];
+        for (size_t state = 0; state < model.numStates(); state++) {
+            cout << get<1>(res)(i, state) * C << "\t";
+        }
+        cout << endl;
+    }
+    
+    cout << endl << endl;
+    
+    C = 1;
+    for (long i = observation.length() - 1; i >= 0; i--) {
+        if (i != observation.length() - 1)
+            C *= get<0>(res)[i+1];
+        for (size_t state = 0; state < model.numStates(); state++) {
+            cout << get<2>(res)(i, state) * C << "\t";
+        }
+        cout << endl;
+    }
+     */
+    
+    /*
+    cout << "Running Baum-Welch training." << endl;
+    train_by_baumwelch(model, {observation});
+    
+    model.finalize();
+    
+    cout << "Writing model to dot file..." << endl;
+    ofstream outbw("testmodel_bw.dot", ofstream::out);
+    model.toDot(outbw);
+    outbw.close();
+     */
+    
     return 0;
 }

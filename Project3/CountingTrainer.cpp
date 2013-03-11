@@ -13,6 +13,7 @@ void train_by_counting(HMM& model, vector<string> observations, vector<vector<st
 {
     if (model.isFinalized())
         throw invalid_argument("Model must not be finalized!");
+    model.reset();
     
     Matrix<size_t> A(model.numStates(), model.numStates(), 0);
     vector<size_t> pi(model.numStates(), 0);

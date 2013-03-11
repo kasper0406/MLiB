@@ -8,8 +8,6 @@
 
 using namespace std;
 
-#include <iostream>
-
 pair<double,vector<size_t>> viterbi(string observation, const HMM& model)
 {
     if (!model.isFinalized())
